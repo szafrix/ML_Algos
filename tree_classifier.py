@@ -20,7 +20,7 @@ def calculate_loss_func(m_left, m_right, gini_left, gini_right):
     return (m_left/m)*gini_left + (m_right/m)*gini_right
 
 
-def split(df, features, target):
+def get_split(df, features, target):
     prev_gini = gini_impurity(df[target].values)
     best_loss = np.inf
     
@@ -38,12 +38,51 @@ def split(df, features, target):
                 best_value = value
                 
     if best_loss==np.inf:
-        return 'done'
+        return dict(df.groupby(target).count().iloc[:, 0]/len(df))
     else:
         return best_feature, best_value
+
+
+def get_decision_path(df, features, target):
+    split = get_split(df, features, target)
+    if not isinstance(split, tuple):
+        return split
+    left_side = df[df[split[0]]<=split[1]]
+    right_side = df[df[split[0]]>split[1]]
+    left_split = get_decision_path(left_side, features, target)
+    right_split = get_decision_path(right_side, features, target)
+    decision = [split, {'L':left_split, 'R':right_split}]
+    return decision
+
+def prepare_prediction_dict(X, decision_path):
+    if isinstance(decision_path, dict):
+        return decision_path
+    feature, value = decision_path[0]
+    dictionary = decision_path[1]
+    if X[feature]<=value:
+        return prepare_prediction_dict(X, dictionary['L'])
+    elif X[feature]>value:
+        return prepare_prediction_dict(X, dictionary['R'])
+
+def return_preds(pred_dict):
+    return max(pred_dict, key=pred_dict.get)
+
+class CARTClassifier:
     
+    def fit(self, df, features, target):
+        self.features = features
+        self.target = target
+        self.decision_path = get_decision_path(df, features, target)
+        
+    def predict(self, df):
+        preds = np.array([])
+        for idx, row in df.iterrows():
+            prediction_dict = prepare_prediction_dict(row[self.features], self.decision_path)
+            pred = return_preds(prediction_dict)
+            preds = np.append(preds, pred)
+        return preds
     
-'''predykcja:
--> calc initial gini
--> get next split
-'''
+cart = CARTClassifier()
+cart.fit(df, cols, 'target')
+from sklearn.metrics import accuracy_score
+print(accuracy_score(df['target'], cart.predict(df)))
